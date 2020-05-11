@@ -1,0 +1,13 @@
+{
+  "version": "0.0.1",
+  "apiVersion": "1.0.0",
+  "author": "Benjamin Meisels",
+  "description": "",
+  "name": "IL0373",
+  "extensions": {
+    "IL0373": {
+      "type": "HighLevelAnalyzer",
+      "entryPoint": "HighLevelAnalyzer.Hla"
+    }
+  }
+}
