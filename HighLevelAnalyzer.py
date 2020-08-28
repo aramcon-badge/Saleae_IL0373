@@ -2,6 +2,7 @@
 # For more information and documentation, please go to https://github.com/saleae/logic2-examples
 
 from saleae.analyzers import HighLevelAnalyzer, AnalyzerFrame
+from binascii import hexlify
 
 commands = {
     b'\x00': ('Panel Setting (PSR)', 1),
@@ -10,9 +11,9 @@ commands = {
     b'\x04': ('Power ON (PON)', 0),
     b'\x06': ('Booster Soft Start (BTST)', 3),
     b'\x07': ('Deep sleep (DSLP)', 1),
-    b'\x10': ('Display Start Transmission 1', 4736),
-    b'\x12': ('Display Refresh (DRF) ', 1),
-    b'\x13': ('Display Start Transmission 2', 4736),
+    b'\x10': ('Display Start Transmission 1', None),
+    b'\x12': ('Display Refresh (DRF) ', 0),
+    b'\x13': ('Display Start Transmission 2', None),
     b'\x20': ('VCOM LUT (LUTC)', 44),
     b'\x21': ('W2W LUT (LUTWW)', 42),
     b'\x22': ('B2W LUT (LUTBW / LUTR)', 42),
@@ -28,12 +29,23 @@ commands = {
 }
 
 first = True
+pixel_count = None
+
+pixel_count_table = {
+    0b00: 96 * 230,
+    0b01: 96 * 252,
+    0b10: 128 * 296,
+    0b11: 160 * 296
+}
+
+def to_hex(s):
+    return hexlify(s).decode('ascii').upper() + 'h'
 
 class Hla(HighLevelAnalyzer):
 
     result_types = {
         'IL0373_frame': {
-            'format': '{{data.command_id}}:{{data.command_name}} [{{data.command_data}}]'
+            'format': '{{data.display_command_id}}:{{data.command_name}} [{{data.display_command_data}}]'
         }
     }
 
@@ -45,6 +57,11 @@ class Hla(HighLevelAnalyzer):
         '''
         self._expecting_command = True
 
+    def handle_frame(self):
+        global pixel_count
+        if self._command_id == b'\x00':
+            resolution_mode = self._data[0][0] >> 6
+            pixel_count = pixel_count_table[resolution_mode]
 
     def decode(self, frame):
         global first
@@ -60,6 +77,8 @@ class Hla(HighLevelAnalyzer):
             if self._expecting_command:
                 command_id = octet
                 self._remaining_data_len = commands[command_id][1]
+                if self._remaining_data_len is None:
+                    self._remaining_data_len = pixel_count / 8
                 self._start_time = frame.start_time
                 self._end_time = frame.end_time
                 self._data = []
@@ -79,17 +98,19 @@ class Hla(HighLevelAnalyzer):
                     frame_complete = True
 
             if frame_complete:
-                data_to_print = ",".join(map(str, self._data)) if len(self._data) < 6 else ''
-                print(f'{self._command_name}({self._command_id}) data = [{data_to_print}]')
+                self.handle_frame()
+                data_to_print = ",".join(map(to_hex, self._data)) if len(self._data) < 6 else ''
+                command_id_to_print = to_hex(self._command_id)
+                print(f'{self._command_name}({command_id_to_print}) data = [{data_to_print}]')
                 return AnalyzerFrame(
                     'IL0373_frame',
                     self._start_time,
                     self._end_time,
                     {
                         'input_type': frame.type,
-                        'command_id': self._command_id,
+                        'display_command_id': command_id_to_print,
                         'command_name': self._command_name,
-                        'command_data': data_to_print
+                        'display_command_data': data_to_print
                     }
                 )
        
